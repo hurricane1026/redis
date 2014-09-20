@@ -189,6 +189,10 @@ void loadServerConfigFromString(char *config) {
                 }
                 fclose(logfp);
             }
+        } else if (!strcasecmp(argv[0],"accesslog") && argc == 2) {
+            if ((server.accesslog = yesnotoi(argv[1])) == -1) {
+                err = "argument must be 'yes' or 'no'"; goto loaderr;
+            }
         } else if (!strcasecmp(argv[0],"syslog-enabled") && argc == 2) {
             if ((server.syslog_enabled = yesnotoi(argv[1])) == -1) {
                 err = "argument must be 'yes' or 'no'"; goto loaderr;

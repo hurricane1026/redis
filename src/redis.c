@@ -1955,8 +1955,7 @@ void call(redisClient *c, int flags) {
             propagate(rop->cmd, rop->dbid, rop->argv, rop->argc, rop->target);
         }
         redisOpArrayFree(&server.also_propagate);
-    }
-    server.stat_numcommands++;
+    } server.stat_numcommands++;
 }
 
 /* If this function gets called we already read a whole
@@ -1972,6 +1971,24 @@ int processCommand(redisClient *c) {
      * go through checking for replication and QUIT will cause trouble
      * when FORCE_REPLICATION is enabled and would be implemented in
      * a regular command proc. */
+    if (server.accesslog)
+    {
+        /*char accesslog[12 + REDIS_IP_STR_LEN + 6 + 20 + 50[>key len<]];*/
+        char accesslog[128];
+        if (c->argc == 1) {
+            snprintf(accesslog, 128, "Accesslog:(%s:%d) %s", c->remote_ip, c->remote_port, c->argv[0]->ptr);
+        } else if (c->argc == 2){
+            snprintf(accesslog, 128, "Accesslog:(%s:%d) %s %s", c->remote_ip, c->remote_port, c->argv[0]->ptr, c->argv[1]->ptr);
+        } else if (c->argc == 3){
+            snprintf(accesslog, 128, "Accesslog:(%s:%d) %s %s %s", c->remote_ip, c->remote_port, c->argv[0]->ptr, c->argv[1]->ptr, c->argv[2]->ptr);
+        } else {
+            snprintf(accesslog, 128, "Accesslog:(%s:%d) %s %s %s %s", c->remote_ip, c->remote_port,
+                    c->argv[0]->ptr, c->argv[1]->ptr,
+                    c->argv[2]->ptr, c->argv[3]->ptr);
+        }
+        redisLog(REDIS_WARNING, accesslog);
+    }
+
     if (!strcasecmp(c->argv[0]->ptr,"quit")) {
         addReply(c,shared.ok);
         c->flags |= REDIS_CLOSE_AFTER_REPLY;
