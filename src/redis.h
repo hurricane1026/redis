@@ -483,6 +483,8 @@ typedef struct redisClient {
     long long reploff;      /* replication offset if this is our master */
     long long repl_ack_off; /* replication ack offset, if this is a slave */
     long long repl_ack_time;/* replication ack time, if this is a slave */
+    char remote_ip[REDIS_IP_STR_LEN];
+    int remote_port;
     char replrunid[REDIS_RUN_ID_SIZE+1]; /* master run id if this is a master */
     int slave_listening_port; /* As configured with: SLAVECONF listening-port */
     multiState mstate;      /* MULTI/EXEC state */
@@ -904,7 +906,7 @@ size_t redisPopcount(void *s, long count);
 void redisSetProcTitle(char *title);
 
 /* networking.c -- Networking and Client related operations */
-redisClient *createClient(int fd);
+redisClient *createClient(int fd, const char* remote_ip, int remote_port);
 void closeTimedoutClients(void);
 void freeClient(redisClient *c);
 void freeClientAsync(redisClient *c);
