@@ -649,6 +649,14 @@ void configSetCommand(redisClient *c) {
 
         if (yn == -1) goto badfmt;
         server.aof_no_fsync_on_rewrite = yn;
+    } else if (!strcasecmp(c->argv[2]->ptr, "flushable")) {
+        int yn = yesnotoi(o->ptr);
+        if (yn == -1) goto badfmt;
+        server.flushable = yn;
+    } else if (!strcasecmp(c->argv[2]->ptr, "accesslog")) {
+        int yn = yesnotoi(o->ptr);
+        if (yn == -1) goto badfmt;
+        server.accesslog = yn;
     } else if (!strcasecmp(c->argv[2]->ptr,"appendonly")) {
         int enable = yesnotoi(o->ptr);
 
@@ -985,6 +993,10 @@ void configGetCommand(redisClient *c) {
             server.repl_disable_tcp_nodelay);
     config_get_bool_field("aof-rewrite-incremental-fsync",
             server.aof_rewrite_incremental_fsync);
+    config_get_bool_field("flushable",
+            server.flushable);
+    config_get_bool_field("accesslog",
+            server.accesslog);
 
     /* Everything we can't handle with macros follows. */
 
