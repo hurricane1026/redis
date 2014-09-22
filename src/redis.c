@@ -1339,6 +1339,9 @@ void initServerConfig() {
     server.rdb_filename = zstrdup(REDIS_DEFAULT_RDB_FILENAME);
     server.aof_filename = zstrdup(REDIS_DEFAULT_AOF_FILENAME);
     server.requirepass = NULL;
+    server.configaddress = NULL;
+    server.flushable = REDIS_FLUSHABLE_OFF;
+    server.accesslog = REDIS_ACCESSLOG_OFF;
     server.rdb_compression = REDIS_DEFAULT_RDB_COMPRESSION;
     server.rdb_checksum = REDIS_DEFAULT_RDB_CHECKSUM;
     server.stop_writes_on_bgsave_err = REDIS_DEFAULT_STOP_WRITES_ON_BGSAVE_ERROR;
@@ -1989,6 +1992,7 @@ int processCommand(redisClient *c) {
         redisLog(REDIS_WARNING, accesslog);
     }
 
+
     if (!strcasecmp(c->argv[0]->ptr,"quit")) {
         addReply(c,shared.ok);
         c->flags |= REDIS_CLOSE_AFTER_REPLY;
@@ -2031,6 +2035,12 @@ int processCommand(redisClient *c) {
             addReply(c, shared.oomerr);
             return REDIS_OK;
         }
+    }
+
+
+    if (!strcasecmp(c->argv[0]->ptr, "config") && server.configaddress && strcmp(c->remote_ip, server.configaddress)) {
+        addReplyError(c,"The server can not process config Command for an unkown ip");
+        return REDIS_OK;
     }
 
     /* Don't accept write commands if there are problems persisting on disk

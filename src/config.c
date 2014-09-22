@@ -372,6 +372,12 @@ void loadServerConfigFromString(char *config) {
                 goto loaderr;
             }
             server.requirepass = zstrdup(argv[1]);
+        } else if (!strcasecmp(argv[0], "configaddress") && argc == 2) {
+            if (strlen(argv[1]) > REDIS_IP_STR_LEN) {
+                err = "config server's ip is longer than REDIS_IP_STR_LEN";
+                goto loaderr;
+            }
+            server.configaddress = zstrdup(argv[1]);
         } else if (!strcasecmp(argv[0],"pidfile") && argc == 2) {
             zfree(server.pidfile);
             server.pidfile = zstrdup(argv[1]);
@@ -562,6 +568,10 @@ void configSetCommand(redisClient *c) {
         if (sdslen(o->ptr) > REDIS_AUTHPASS_MAX_LEN) goto badfmt;
         zfree(server.requirepass);
         server.requirepass = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
+    } else if (!strcasecmp(c->argv[2]->ptr, "configaddress")) {
+        if (sdslen(o->ptr) > REDIS_IP_STR_LEN) goto badfmt;
+        zfree(server.configaddress);
+        server.configaddress = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
     } else if (!strcasecmp(c->argv[2]->ptr,"masterauth")) {
         zfree(server.masterauth);
         server.masterauth = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
@@ -931,6 +941,7 @@ void configGetCommand(redisClient *c) {
     config_get_string_field("unixsocket",server.unixsocket);
     config_get_string_field("logfile",server.logfile);
     config_get_string_field("pidfile",server.pidfile);
+    config_get_string_field("configaddress",server.configaddress);
 
     /* Numerical values */
     config_get_numerical_field("maxmemory",server.maxmemory);
@@ -1683,6 +1694,9 @@ int rewriteConfig(char *path) {
      * the rewrite state. */
 
     rewriteConfigYesNoOption(state,"daemonize",server.daemonize,0);
+    rewriteConfigYesNoOption(state,"accesslog",server.daemonize,0);
+    rewriteConfigYesNoOption(state,"flushable",server.daemonize,0);
+    rewriteConfigStringOption(state,"configaddress",server.configaddress,REDIS_DEFAULT_CONFIG_ADDR);
     rewriteConfigStringOption(state,"pidfile",server.pidfile,REDIS_DEFAULT_PID_FILE);
     rewriteConfigNumericalOption(state,"port",server.port,REDIS_SERVERPORT);
     rewriteConfigNumericalOption(state,"tcp-backlog",server.tcp_backlog,REDIS_TCP_BACKLOG);

@@ -98,6 +98,7 @@
 #define REDIS_REPL_BACKLOG_MIN_SIZE (1024*16)          /* 16k */
 #define REDIS_BGSAVE_RETRY_DELAY 5 /* Wait a few secs before trying again. */
 #define REDIS_DEFAULT_PID_FILE "/var/run/redis.pid"
+#define REDIS_DEFAULT_CONFIG_ADDR "127.0.0.1"
 #define REDIS_DEFAULT_SYSLOG_IDENT "redis"
 #define REDIS_DEFAULT_CLUSTER_CONFIG_FILE "nodes.conf"
 #define REDIS_DEFAULT_DAEMONIZE 0
@@ -212,6 +213,14 @@
 #define REDIS_AOF_OFF 0             /* AOF is off */
 #define REDIS_AOF_ON 1              /* AOF is on */
 #define REDIS_AOF_WAIT_REWRITE 2    /* AOF waits rewrite to start appending */
+
+/*Flushable states*/
+#define REDIS_FLUSHABLE_ON 1
+#define REDIS_FLUSHABLE_OFF 0
+
+/*ACCESSLOG states*/
+#define REDIS_ACCESSLOG_ON 1
+#define REDIS_ACCESSLOG_OFF 0
 
 /* Client flags */
 #define REDIS_SLAVE (1<<0)   /* This client is a slave server */
@@ -721,6 +730,7 @@ struct redisServer {
     /* Replication (slave) */
     char *masterauth;               /* AUTH with this password with master */
     char *masterhost;               /* Hostname of master */
+    char *configaddress;            /* ip address can run config command*/
     int masterport;                 /* Port of master */
     int repl_timeout;               /* Timeout after N seconds of master idle */
     redisClient *master;     /* Client that is master for this slave */
