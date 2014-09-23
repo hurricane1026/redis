@@ -59,6 +59,36 @@ clientBufferLimitsConfig clientBufferLimitsDefaults[REDIS_CLIENT_TYPE_COUNT] = {
  * Config file parsing
  *----------------------------------------------------------------------------*/
 
+/* We use the following dictionary type to store where a configuration
+ * option is mentioned in the old configuration file, so it's
+ * like "maxmemory" -> list of line numbers (first line is zero). */
+unsigned int dictSdsCaseHash(const void *key);
+int dictSdsKeyCaseCompare(void *privdata, const void *key1, const void *key2);
+void dictSdsDestructor(void *privdata, void *val);
+void dictListDestructor(void *privdata, void *val);
+
+/* Sentinel config rewriting is implemented inside sentinel.c by
+ * rewriteConfigSentinelOption(). */
+void rewriteConfigSentinelOption(struct rewriteConfigState *state);
+
+dictType optionToLineDictType = {
+    dictSdsCaseHash,            /* hash function */
+    NULL,                       /* key dup */
+    NULL,                       /* val dup */
+    dictSdsKeyCaseCompare,      /* key compare */
+    dictSdsDestructor,          /* key destructor */
+    dictListDestructor          /* val destructor */
+};
+
+dictType optionSetDictType = {
+    dictSdsCaseHash,            /* hash function */
+    NULL,                       /* key dup */
+    NULL,                       /* val dup */
+    dictSdsKeyCaseCompare,      /* key compare */
+    dictSdsDestructor,          /* key destructor */
+    NULL                        /* val destructor */
+};
+
 int yesnotoi(char *s) {
     if (!strcasecmp(s,"yes")) return 1;
     else if (!strcasecmp(s,"no")) return 0;
@@ -193,6 +223,44 @@ void loadServerConfigFromString(char *config) {
             if ((server.accesslog = yesnotoi(argv[1])) == -1) {
                 err = "argument must be 'yes' or 'no'"; goto loaderr;
             }
+        } else if (!strcasecmp(argv[0],"access_whitelist_file") && argc == 2 ) {
+            /* Load the file content */
+            char *filename = argv[1];
+            if (filename) {
+                int totlines, i;
+                sds *lines;
+                sds iplist = sdsempty();
+                char buf[REDIS_CONFIGLINE_MAX+1];
+
+                FILE *fp;
+                if ((fp = fopen(filename,"r")) == NULL) {
+                    err = "argument must be a readable file path"; 
+                    goto loaderr;
+                }
+                while(fgets(buf,REDIS_CONFIGLINE_MAX+1,fp) != NULL) {
+                    iplist = sdscat(iplist,buf);
+                }
+                fclose(fp);
+             
+                lines = sdssplitlen(iplist,strlen(iplist),"\n",1,&totlines);
+
+                server.access_whitelist = dictCreate(&optionSetDictType, NULL);
+                for (i = 0; i < totlines; i++) {
+                    if (sdslen(lines[i]) == 0) {
+                        continue;
+                    }
+                    if (strlen(lines[i]) > REDIS_IP_STR_LEN ||
+                            dictAdd(server.access_whitelist, sdsdup(lines[i]), NULL) != DICT_OK) {
+                        err = "whitelist ip addr in config file format wrong";
+                        dictRelease(server.access_whitelist);
+                        server.access_whitelist = NULL;
+                        goto loaderr;
+                    }
+                }
+                sdsfree(iplist);
+                sdsfreesplitres(lines,totlines);
+            }
+            server.access_whitelist_file = zstrdup(argv[1]);
         } else if (!strcasecmp(argv[0],"syslog-enabled") && argc == 2) {
             if ((server.syslog_enabled = yesnotoi(argv[1])) == -1) {
                 err = "argument must be 'yes' or 'no'"; goto loaderr;
@@ -572,6 +640,42 @@ void configSetCommand(redisClient *c) {
         if (sdslen(o->ptr) > REDIS_IP_STR_LEN) goto badfmt;
         zfree(server.configaddress);
         server.configaddress = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
+    } else if (!strcasecmp(c->argv[2]->ptr, "access_whitelist_file")) {
+        char *filename = o->ptr;
+        if (filename) {
+            sds iplist = sdsempty();
+            char buf[REDIS_CONFIGLINE_MAX+1];
+
+            FILE *fp;
+            if ((fp = fopen(filename,"r")) == NULL) {
+                goto badfmt;
+            }
+            while(fgets(buf,REDIS_CONFIGLINE_MAX+1,fp) != NULL) {
+                iplist = sdscat(iplist,buf);
+            }
+            fclose(fp);
+         
+            int totlines, i;
+            sds *lines;
+            lines = sdssplitlen(iplist,strlen(iplist),"\n",1,&totlines);
+            
+            dict *whitelist = dictCreate(&optionSetDictType, NULL);
+            for (i = 0; i < totlines; i++) {
+                if (strlen(lines[i]) > REDIS_IP_STR_LEN || 
+                        dictAdd(whitelist, sdsdup(lines[i]), NULL) != DICT_OK) {
+                    dictRelease(whitelist);
+                    goto badfmt;
+                }
+            }
+            sdsfree(iplist);
+            sdsfreesplitres(lines,totlines);
+            if (server.access_whitelist) {
+                dictEmpty(server.access_whitelist, NULL);
+            }
+            server.access_whitelist = whitelist;
+        }
+        zfree(server.access_whitelist_file);
+        server.access_whitelist_file = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
     } else if (!strcasecmp(c->argv[2]->ptr,"masterauth")) {
         zfree(server.masterauth);
         server.masterauth = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
@@ -1010,6 +1114,35 @@ void configGetCommand(redisClient *c) {
             server.accesslog);
 
     /* Everything we can't handle with macros follows. */
+    
+    if (stringmatch(pattern,"access_whitelist_file",0)) {
+        dictEntry *de;
+        dictIterator *di; 
+            
+        sds buf = sdsempty();
+        buf = sdscatprintf(buf,"%s:|", server.access_whitelist_file);
+
+        di = dictGetIterator(server.access_whitelist);
+        while((de = dictNext(di)) != NULL) {                           
+            sds key = dictGetKey(de);
+            if (sdslen(key) == 0) {
+                continue;
+            }
+            buf = sdscatprintf(buf,"%s|", key);
+
+            /* Whether need this if condition? */
+            /* break when retrun list is too long */
+            if (sdslen(buf) > REDIS_CONFIGLINE_MAX) {
+                buf = sdscatprintf(buf,"..."); 
+            	break;
+            }
+        }        
+        dictReleaseIterator(di);
+        addReplyBulkCString(c, "access_whitelist_file");
+        addReplyBulkCString(c,buf);
+        sdsfree(buf);
+        matches++;
+    }
 
     if (stringmatch(pattern,"appendonly",0)) {
         addReplyBulkCString(c,"appendonly");
@@ -1148,35 +1281,6 @@ void configGetCommand(redisClient *c) {
 
 #define REDIS_CONFIG_REWRITE_SIGNATURE "# Generated by CONFIG REWRITE"
 
-/* We use the following dictionary type to store where a configuration
- * option is mentioned in the old configuration file, so it's
- * like "maxmemory" -> list of line numbers (first line is zero). */
-unsigned int dictSdsCaseHash(const void *key);
-int dictSdsKeyCaseCompare(void *privdata, const void *key1, const void *key2);
-void dictSdsDestructor(void *privdata, void *val);
-void dictListDestructor(void *privdata, void *val);
-
-/* Sentinel config rewriting is implemented inside sentinel.c by
- * rewriteConfigSentinelOption(). */
-void rewriteConfigSentinelOption(struct rewriteConfigState *state);
-
-dictType optionToLineDictType = {
-    dictSdsCaseHash,            /* hash function */
-    NULL,                       /* key dup */
-    NULL,                       /* val dup */
-    dictSdsKeyCaseCompare,      /* key compare */
-    dictSdsDestructor,          /* key destructor */
-    dictListDestructor          /* val destructor */
-};
-
-dictType optionSetDictType = {
-    dictSdsCaseHash,            /* hash function */
-    NULL,                       /* key dup */
-    NULL,                       /* val dup */
-    dictSdsKeyCaseCompare,      /* key compare */
-    dictSdsDestructor,          /* key destructor */
-    NULL                        /* val destructor */
-};
 
 /* The config rewrite state. */
 struct rewriteConfigState {
@@ -1697,6 +1801,7 @@ int rewriteConfig(char *path) {
     rewriteConfigYesNoOption(state,"accesslog",server.daemonize,0);
     rewriteConfigYesNoOption(state,"flushable",server.daemonize,0);
     rewriteConfigStringOption(state,"configaddress",server.configaddress,REDIS_DEFAULT_CONFIG_ADDR);
+    rewriteConfigStringOption(state,"access_whitelist_file",server.access_whitelist_file,"");
     rewriteConfigStringOption(state,"pidfile",server.pidfile,REDIS_DEFAULT_PID_FILE);
     rewriteConfigNumericalOption(state,"port",server.port,REDIS_SERVERPORT);
     rewriteConfigNumericalOption(state,"tcp-backlog",server.tcp_backlog,REDIS_TCP_BACKLOG);

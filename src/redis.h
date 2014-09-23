@@ -663,6 +663,8 @@ struct redisServer {
     int daemonize;                  /* True if running as a daemon */
     int flushable;                  /* True if flushall and flushdb command works*/
     int accesslog;                  /* True if want to print accesslog*/
+    dict *access_whitelist;         /* Dict contains ip addresses can access this server*/
+    char *access_whitelist_file;    /* Config file contains ip addresses can access this server*/
     clientBufferLimitsConfig client_obuf_limits[REDIS_CLIENT_TYPE_COUNT];
     /* AOF persistence */
     int aof_state;                  /* REDIS_AOF_(ON|OFF|WAIT_REWRITE) */

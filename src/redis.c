@@ -1342,6 +1342,8 @@ void initServerConfig() {
     server.configaddress = NULL;
     server.flushable = REDIS_FLUSHABLE_OFF;
     server.accesslog = REDIS_ACCESSLOG_OFF;
+    server.access_whitelist = NULL;
+    server.access_whitelist_file = NULL;
     server.rdb_compression = REDIS_DEFAULT_RDB_COMPRESSION;
     server.rdb_checksum = REDIS_DEFAULT_RDB_CHECKSUM;
     server.stop_writes_on_bgsave_err = REDIS_DEFAULT_STOP_WRITES_ON_BGSAVE_ERROR;
@@ -1992,6 +1994,14 @@ int processCommand(redisClient *c) {
         redisLog(REDIS_WARNING, accesslog);
     }
 
+    /* filter by white list*/
+    sds remote_ip = sdsnew(c->remote_ip);
+    if (server.access_whitelist && dictFind(server.access_whitelist, remote_ip) == NULL) {
+        addReplyErrorFormat(c,"Refused: ip [%s] is not in access whitelist", c->remote_ip);
+        sdsfree(remote_ip);
+        return REDIS_OK;
+    }
+    sdsfree(remote_ip);
 
     if (!strcasecmp(c->argv[0]->ptr,"quit")) {
         addReply(c,shared.ok);
