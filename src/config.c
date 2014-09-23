@@ -249,7 +249,7 @@ void loadServerConfigFromString(char *config) {
                     if (sdslen(lines[i]) == 0) {
                         continue;
                     }
-                    if (strlen(lines[i]) > REDIS_IP_STR_LEN ||
+                    if (strlen(lines[i]) > REDIS_IP_STR_LEN - 1 ||
                             dictAdd(server.access_whitelist, sdsdup(lines[i]), NULL) != DICT_OK) {
                         err = "whitelist ip addr in config file format wrong";
                         dictRelease(server.access_whitelist);
@@ -441,7 +441,7 @@ void loadServerConfigFromString(char *config) {
             }
             server.requirepass = zstrdup(argv[1]);
         } else if (!strcasecmp(argv[0], "configaddress") && argc == 2) {
-            if (strlen(argv[1]) > REDIS_IP_STR_LEN) {
+            if (strlen(argv[1]) > REDIS_IP_STR_LEN - 1) {
                 err = "config server's ip is longer than REDIS_IP_STR_LEN";
                 goto loaderr;
             }
@@ -637,7 +637,7 @@ void configSetCommand(redisClient *c) {
         zfree(server.requirepass);
         server.requirepass = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
     } else if (!strcasecmp(c->argv[2]->ptr, "configaddress")) {
-        if (sdslen(o->ptr) > REDIS_IP_STR_LEN) goto badfmt;
+        if (sdslen(o->ptr) > REDIS_IP_STR_LEN - 1) goto badfmt;
         zfree(server.configaddress);
         server.configaddress = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
     } else if (!strcasecmp(c->argv[2]->ptr, "access_whitelist_file")) {
@@ -661,7 +661,7 @@ void configSetCommand(redisClient *c) {
             
             dict *whitelist = dictCreate(&optionSetDictType, NULL);
             for (i = 0; i < totlines; i++) {
-                if (strlen(lines[i]) > REDIS_IP_STR_LEN || 
+                if (strlen(lines[i]) > REDIS_IP_STR_LEN - 1 || 
                         dictAdd(whitelist, sdsdup(lines[i]), NULL) != DICT_OK) {
                     dictRelease(whitelist);
                     goto badfmt;
