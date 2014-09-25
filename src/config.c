@@ -132,6 +132,11 @@ void loadServerConfigFromString(char *config) {
             if (server.tcp_backlog < 0) {
                 err = "Invalid backlog value"; goto loaderr;
             }
+        } else if (!strcasecmp(argv[0],"trace_command_limit") && argc == 2) {
+            server.trace_command_limit = atoi(argv[1]);
+            if (server.trace_command_limit < 0) {
+                err = "Invalid trace command limit value"; goto loaderr;
+            }
         } else if (!strcasecmp(argv[0],"bind") && argc >= 2) {
             int j, addresses = argc-1;
 
@@ -608,6 +613,9 @@ void configSetCommand(redisClient *c) {
         if (sdslen(o->ptr) > REDIS_AUTHPASS_MAX_LEN) goto badfmt;
         zfree(server.requirepass);
         server.requirepass = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
+    } else if (!strcasecmp(c->argv[2]->ptr, "trace_command_limit")) {
+        if (getLongLongFromObject(o,&ll) == REDIS_ERR || ll < 0) goto badfmt;
+        server.trace_command_limit = ll;
     } else if (!strcasecmp(c->argv[2]->ptr, "configaddress")) {
         if (sdslen(o->ptr) > REDIS_IP_STR_LEN - 1) goto badfmt;
         zfree(server.configaddress);
@@ -1062,6 +1070,7 @@ void configGetCommand(redisClient *c) {
     config_get_numerical_field("min-slaves-to-write",server.repl_min_slaves_to_write);
     config_get_numerical_field("min-slaves-max-lag",server.repl_min_slaves_max_lag);
     config_get_numerical_field("hz",server.hz);
+    config_get_numerical_field("trace_command_limit",server.trace_command_limit);
 
     /* Bool (yes/no) values */
     config_get_bool_field("no-appendfsync-on-rewrite",
@@ -1878,6 +1887,7 @@ int rewriteConfig(char *path) {
     rewriteConfigClientoutputbufferlimitOption(state);
     rewriteConfigNumericalOption(state,"hz",server.hz,REDIS_DEFAULT_HZ);
     rewriteConfigYesNoOption(state,"aof-rewrite-incremental-fsync",server.aof_rewrite_incremental_fsync,REDIS_DEFAULT_AOF_REWRITE_INCREMENTAL_FSYNC);
+    rewriteConfigNumericalOption(state,"trace_command_limit",server.trace_command_limit,REDIS_DEFAULT_TRACE_COMMAND_LIMIT);
     if (server.sentinel_mode) rewriteConfigSentinelOption(state);
 
     /* Step 3: remove all the orphaned lines in the old file, that is, lines

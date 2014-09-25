@@ -331,6 +331,7 @@
 
 /* Scripting */
 #define REDIS_LUA_TIME_LIMIT 5000 /* milliseconds */
+#define REDIS_DEFAULT_TRACE_COMMAND_LIMIT 10000
 
 /* Units */
 #define UNIT_SECONDS 0
@@ -352,6 +353,9 @@
 #define REDIS_PROPAGATE_NONE 0
 #define REDIS_PROPAGATE_AOF 1
 #define REDIS_PROPAGATE_REPL 2
+
+/* Trace command threshold */
+#define REDIS_TRACE_KEY_LIMIT 50
 
 /* Keyspace changes notification classes. Every class is associated with a
  * character for configuration purposes. */
@@ -665,6 +669,8 @@ struct redisServer {
     int accesslog;                  /* True if want to print accesslog*/
     dict *access_whitelist;         /* Dict contains ip addresses can access this server*/
     char *access_whitelist_file;    /* Config file contains ip addresses can access this server*/
+    dict *trace_keys;               /* Dict contains keys to trace*/
+    int trace_command_limit;        /* Limits of each trace key's commands number*/
     clientBufferLimitsConfig client_obuf_limits[REDIS_CLIENT_TYPE_COUNT];
     /* AOF persistence */
     int aof_state;                  /* REDIS_AOF_(ON|OFF|WAIT_REWRITE) */
@@ -1245,6 +1251,9 @@ char *redisGitDirty(void);
 uint64_t redisBuildId(void);
 
 /* Commands prototypes */
+void traceaddCommand(redisClient *c);
+void tracedelCommand(redisClient *c);
+void traceshowCommand(redisClient *c);
 void authCommand(redisClient *c);
 void pingCommand(redisClient *c);
 void echoCommand(redisClient *c);
