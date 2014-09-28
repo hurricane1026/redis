@@ -114,9 +114,6 @@ struct redisCommand *commandTable;
  * M: Do not automatically propagate the command on MONITOR.
  */
 struct redisCommand redisCommandTable[] = {
-    {"traceadd",traceaddCommand,-2,"wm",0,NULL,1,-1,1,0,0},
-    {"tracedel",tracedelCommand,-2,"w",0,NULL,1,-1,1,0,0},
-    {"traceshow",traceshowCommand,-1,"r",0,NULL,1,1,1,0,0},
     {"get",getCommand,2,"r",0,NULL,1,1,1,0,0},
     {"set",setCommand,-3,"wm",0,noPreloadGetKeys,1,1,1,0,0},
     {"setnx",setnxCommand,3,"wm",0,noPreloadGetKeys,1,1,1,0,0},
@@ -271,7 +268,11 @@ struct redisCommand redisCommandTable[] = {
     {"pfadd",pfaddCommand,-2,"wm",0,NULL,1,1,1,0,0},
     {"pfcount",pfcountCommand,-2,"w",0,NULL,1,1,1,0,0},
     {"pfmerge",pfmergeCommand,-2,"wm",0,NULL,1,-1,1,0,0},
-    {"pfdebug",pfdebugCommand,-3,"w",0,NULL,0,0,0,0,0}
+    {"pfdebug",pfdebugCommand,-3,"w",0,NULL,0,0,0,0,0},
+    {"traceadd",traceaddCommand,-2,"wm",0,NULL,1,-1,1,0,0},
+    {"tracedel",tracedelCommand,-2,"w",0,NULL,1,-1,1,0,0},
+    {"tracekeys",tracekeysCommand,1,"r",0,NULL,1,1,1,0,0},
+    {"traceshow",traceshowCommand,2,"r",0,NULL,1,1,1,0,0}
 };
 
 /*============================ Utility functions ============================ */
@@ -1978,6 +1979,41 @@ void call(redisClient *c, int flags) {
     } server.stat_numcommands++;
 }
 
+void recordTraceKeys(redisClient *c) {
+    dictIterator *di = dictGetIterator(server.trace_keys);
+    dictEntry *de;
+    list *cmds = NULL;
+    
+    sds buf = sdsempty(); 
+    sds key_record = sdsempty(); 
+    
+    char datetime[200];
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", localtime(&tv.tv_sec));
+    key_record = sdscatprintf(key_record, "%s, %s:%d, ", datetime, (char *)c->remote_ip, c->remote_port);
+    int i = 0;
+    for (i = 0; i < c->argc - 1; i++) {
+        buf = sdscatprintf(buf, "%s ", (char *)c->argv[i]->ptr);
+    }
+    buf = sdscatprintf(buf, "%s", (char *)c->argv[i]->ptr);
+
+    while((de = dictNext(di)) != NULL) {
+        sds key = dictGetKey(de);
+        if (strstr(buf, key) != NULL) {
+            cmds = dictGetVal(de);
+            int length = listLength(cmds);
+            if (length > 0 && length >= server.trace_command_limit) {
+                listDelNode(cmds, listFirst(cmds));
+            } 
+            listAddNodeTail(cmds, sdsdup(sdscatprintf(key_record, "%s", buf))); 
+        }
+    }
+    dictReleaseIterator(di);
+    sdsfree(buf);
+    sdsfree(key_record);
+}
+
 /* If this function gets called we already read a whole
  * command, arguments are in the client argv/argc fields.
  * processCommand() execute the command or prepare the
@@ -2010,31 +2046,7 @@ int processCommand(redisClient *c) {
     }
 
     /*record trace keys*/
-    dictIterator *di = dictGetIterator(server.trace_keys);
-    dictEntry *de;
-    list *cmds = NULL;
-    
-    sds buf = sdsempty(); 
-    int i = 0;
-    for (i = 0; i < c->argc - 1; i++) {
-        buf = sdscatprintf(buf, "%s ", (char *)c->argv[i]->ptr);
-    }
-    buf = sdscatprintf(buf, "%s", (char *)c->argv[i]->ptr);
-
-    while((de = dictNext(di)) != NULL) {
-        sds key = dictGetKey(de);
-        if (strstr(buf, key) != NULL) {
-            cmds = dictGetVal(de);
-            int length = listLength(cmds);
-            if (length > 0 && length >= server.trace_command_limit) {
-                listDelNode(cmds, listFirst(cmds));
-            } 
-            listAddNodeTail(cmds, sdsdup(buf)); 
-        }
-    }
-    dictReleaseIterator(di);
-    sdsfree(buf);
-
+    recordTraceKeys(c);
 
     if (!strcasecmp(c->argv[0]->ptr,"quit")) {
         addReply(c,shared.ok);
@@ -2340,8 +2352,21 @@ void tracedelCommand(redisClient *c) {
         if (dictFind(server.trace_keys, key) != NULL) {
             dictDelete(server.trace_keys, key);
         }
-    }
+    } 
     addReply(c, shared.ok);
+}
+
+void tracekeysCommand(redisClient *c) {
+    dictIterator *di = dictGetIterator(server.trace_keys);
+    dictEntry *de;
+    
+    /*show all keys that being traced(only show keys)*/
+    addReplyMultiBulkLen(c, dictSize(server.trace_keys)); 
+    while((de = dictNext(di)) != NULL) {
+        sds key = dictGetKey(de);
+        addReplyBulkCString(c,key);
+    } 
+    dictReleaseIterator(di);
 }
 
 void traceshowCommand(redisClient *c) {
@@ -2350,32 +2375,23 @@ void traceshowCommand(redisClient *c) {
     list *cmds = NULL;
     listNode *node;
     sds buf = sdsempty();
-    if (c->argc == 1) {
-        /*show all keys that being traced(only show keys)*/
-        addReplyMultiBulkLen(c, dictSize(server.trace_keys)); 
-        while((de = dictNext(di)) != NULL) {
-            sds key = dictGetKey(de);
-            addReplyBulkCString(c,key);
-        } 
-        dictReleaseIterator(di);
-    } else if(c->argc == 2) {
-        /*show single key and its command trace*/
-        sds key = c->argv[1]->ptr;
-        if ((de = dictFind(server.trace_keys, key)) != NULL) {
-            cmds = dictGetVal(de);
-            addReplyMultiBulkLen(c, listLength(cmds));
-            node = listFirst(cmds);
-            while (node) {
-                sds cmd = listNodeValue(node);
-                addReplyBulkCString(c,cmd);
-                node = listNextNode(node); 
-            }
-        } else {
-            addReplyError(c, "trace key is not in trace list");
+    
+    /*show single key and its command trace*/
+    sds key = c->argv[1]->ptr;
+    if ((de = dictFind(server.trace_keys, key)) != NULL) {
+        cmds = dictGetVal(de);
+        addReplyMultiBulkLen(c, listLength(cmds));
+        node = listFirst(cmds);
+        while (node) {
+            sds cmd = listNodeValue(node);
+            addReplyBulkCString(c,cmd);
+            node = listNextNode(node); 
         }
     } else {
-        addReplyError(c, "wrong number of arguments for 'traceshow' command");
+        addReplyError(c, "trace key is not in trace list");
     }
+
+    dictReleaseIterator(di);
     sdsfree(buf);
 }
 

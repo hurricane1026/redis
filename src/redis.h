@@ -1253,6 +1253,7 @@ uint64_t redisBuildId(void);
 /* Commands prototypes */
 void traceaddCommand(redisClient *c);
 void tracedelCommand(redisClient *c);
+void tracekeysCommand(redisClient *c);
 void traceshowCommand(redisClient *c);
 void authCommand(redisClient *c);
 void pingCommand(redisClient *c);
