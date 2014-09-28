@@ -222,6 +222,10 @@
 #define REDIS_ACCESSLOG_ON 1
 #define REDIS_ACCESSLOG_OFF 0
 
+/* Trace states */
+#define REDIS_TRACE_ON 1
+#define REDIS_TRACE_OFF 0
+
 /* Client flags */
 #define REDIS_SLAVE (1<<0)   /* This client is a slave server */
 #define REDIS_MASTER (1<<1)  /* This client is a master server */
@@ -671,6 +675,7 @@ struct redisServer {
     char *access_whitelist_file;    /* Config file contains ip addresses can access this server*/
     dict *trace_keys;               /* Dict contains keys to trace*/
     int trace_command_limit;        /* Limits of each trace key's commands number*/
+    int tracestates;                /* True if trace function is on*/
     clientBufferLimitsConfig client_obuf_limits[REDIS_CLIENT_TYPE_COUNT];
     /* AOF persistence */
     int aof_state;                  /* REDIS_AOF_(ON|OFF|WAIT_REWRITE) */

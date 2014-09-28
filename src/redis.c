@@ -1360,6 +1360,7 @@ void initServerConfig() {
     server.access_whitelist_file = NULL;
     server.trace_keys = dictCreate(&commandlistDictType,NULL);
     server.trace_command_limit = REDIS_DEFAULT_TRACE_COMMAND_LIMIT;
+    server.tracestates = REDIS_TRACE_OFF;
     server.rdb_compression = REDIS_DEFAULT_RDB_COMPRESSION;
     server.rdb_checksum = REDIS_DEFAULT_RDB_CHECKSUM;
     server.stop_writes_on_bgsave_err = REDIS_DEFAULT_STOP_WRITES_ON_BGSAVE_ERROR;
@@ -2046,7 +2047,9 @@ int processCommand(redisClient *c) {
     }
 
     /*record trace keys*/
-    recordTraceKeys(c);
+    if (server.tracestates) {
+        recordTraceKeys(c);
+    }
 
     if (!strcasecmp(c->argv[0]->ptr,"quit")) {
         addReply(c,shared.ok);
@@ -2331,68 +2334,88 @@ void authCommand(redisClient *c) {
 void traceaddCommand(redisClient *c) {
     int i;
     list *cmds = NULL;
-    if (c->argc + dictSize(server.trace_keys) > REDIS_TRACE_KEY_LIMIT) {
-        addReplyError(c, "too meny trace keys");
-    } else {
-        for (i = 1; i < c->argc; i++) {
-            sds key = c->argv[i]->ptr;
-            if (dictFind(server.trace_keys, key) == NULL) {
-                cmds = listCreate();
-                dictAdd(server.trace_keys, sdsdup(key), cmds);
+    if (server.tracestates) {
+        if (c->argc + dictSize(server.trace_keys) > REDIS_TRACE_KEY_LIMIT) {
+            addReplyError(c, "too meny trace keys");
+        } else {
+            for (i = 1; i < c->argc; i++) {
+                sds key = c->argv[i]->ptr;
+                if (dictFind(server.trace_keys, key) == NULL) {
+                    cmds = listCreate();
+                    dictAdd(server.trace_keys, sdsdup(key), cmds);
+                }
             }
+            addReply(c, shared.ok);
         }
-        addReply(c, shared.ok);
+    } else {
+        addReplyMultiBulkLen(c, 1);
+        addReplyBulkCString(c,"Trace function is off now");
     }
 }
 
 void tracedelCommand(redisClient *c) {
     int i;
-    for (i = 1; i < c->argc; i++) {
-        sds key = c->argv[i]->ptr;
-        if (dictFind(server.trace_keys, key) != NULL) {
-            dictDelete(server.trace_keys, key);
-        }
-    } 
-    addReply(c, shared.ok);
+    if (server.tracestates) {
+        for (i = 1; i < c->argc; i++) {
+            sds key = c->argv[i]->ptr;
+            if (dictFind(server.trace_keys, key) != NULL) {
+                dictDelete(server.trace_keys, key);
+            }
+        } 
+        addReply(c, shared.ok);
+    } else {
+        addReplyMultiBulkLen(c, 1);
+        addReplyBulkCString(c,"Trace function is off now");
+    }
 }
 
 void tracekeysCommand(redisClient *c) {
-    dictIterator *di = dictGetIterator(server.trace_keys);
-    dictEntry *de;
-    
-    /*show all keys that being traced(only show keys)*/
-    addReplyMultiBulkLen(c, dictSize(server.trace_keys)); 
-    while((de = dictNext(di)) != NULL) {
-        sds key = dictGetKey(de);
-        addReplyBulkCString(c,key);
-    } 
-    dictReleaseIterator(di);
+    if (server.tracestates) {
+        dictIterator *di = dictGetIterator(server.trace_keys);
+        dictEntry *de;
+        
+        /*show all keys that being traced(only show keys)*/
+        addReplyMultiBulkLen(c, dictSize(server.trace_keys)); 
+        while((de = dictNext(di)) != NULL) {
+            sds key = dictGetKey(de);
+            addReplyBulkCString(c,key);
+        }
+        dictReleaseIterator(di);
+    } else {
+        addReplyMultiBulkLen(c, 1);
+        addReplyBulkCString(c,"Trace function is off now");
+    }
 }
 
 void traceshowCommand(redisClient *c) {
-    dictIterator *di = dictGetIterator(server.trace_keys);
-    dictEntry *de;
-    list *cmds = NULL;
-    listNode *node;
-    sds buf = sdsempty();
-    
-    /*show single key and its command trace*/
-    sds key = c->argv[1]->ptr;
-    if ((de = dictFind(server.trace_keys, key)) != NULL) {
-        cmds = dictGetVal(de);
-        addReplyMultiBulkLen(c, listLength(cmds));
-        node = listFirst(cmds);
-        while (node) {
-            sds cmd = listNodeValue(node);
-            addReplyBulkCString(c,cmd);
-            node = listNextNode(node); 
+    if (server.tracestates) {
+        dictIterator *di = dictGetIterator(server.trace_keys);
+        dictEntry *de;
+        list *cmds = NULL;
+        listNode *node;
+        sds buf = sdsempty();
+        
+        /*show single key and its command trace*/
+        sds key = c->argv[1]->ptr;
+        if ((de = dictFind(server.trace_keys, key)) != NULL) {
+            cmds = dictGetVal(de);
+            addReplyMultiBulkLen(c, listLength(cmds));
+            node = listFirst(cmds);
+            while (node) {
+                sds cmd = listNodeValue(node);
+                addReplyBulkCString(c,cmd);
+                node = listNextNode(node); 
+            }
+        } else {
+            addReplyError(c, "trace key is not in trace list");
         }
-    } else {
-        addReplyError(c, "trace key is not in trace list");
-    }
 
-    dictReleaseIterator(di);
-    sdsfree(buf);
+        dictReleaseIterator(di);
+        sdsfree(buf);
+    } else {
+        addReplyMultiBulkLen(c, 1);
+        addReplyBulkCString(c,"Trace function is off now");
+    }
 }
 
 void pingCommand(redisClient *c) {

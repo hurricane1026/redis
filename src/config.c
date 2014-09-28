@@ -359,6 +359,10 @@ void loadServerConfigFromString(char *config) {
             if ((server.flushable = yesnotoi(argv[1])) == -1) {
                 err = "argument must be 'yes' or 'no'"; goto loaderr;
             }
+        } else if (!strcasecmp(argv[0], "tracestates") && argc == 2) {
+            if ((server.tracestates = yesnotoi(argv[1])) == -1) {
+                err = "argument must be 'yes' or 'no'"; goto loaderr;
+            }
         } else if (!strcasecmp(argv[0],"hz") && argc == 2) {
             server.hz = atoi(argv[1]);
             if (server.hz < REDIS_MIN_HZ) server.hz = REDIS_MIN_HZ;
@@ -747,6 +751,10 @@ void configSetCommand(redisClient *c) {
         int yn = yesnotoi(o->ptr);
         if (yn == -1) goto badfmt;
         server.flushable = yn;
+    } else if (!strcasecmp(c->argv[2]->ptr, "tracestates")) {
+        int yn = yesnotoi(o->ptr);
+        if (yn == -1) goto badfmt;
+        server.tracestates = yn;
     } else if (!strcasecmp(c->argv[2]->ptr, "accesslog")) {
         int yn = yesnotoi(o->ptr);
         if (yn == -1) goto badfmt;
@@ -1091,6 +1099,8 @@ void configGetCommand(redisClient *c) {
             server.aof_rewrite_incremental_fsync);
     config_get_bool_field("flushable",
             server.flushable);
+    config_get_bool_field("tracestates",
+            server.tracestates);
     config_get_bool_field("accesslog",
             server.accesslog);
 
@@ -1810,6 +1820,7 @@ int rewriteConfig(char *path) {
     rewriteConfigYesNoOption(state,"daemonize",server.daemonize,0);
     rewriteConfigYesNoOption(state,"accesslog",server.daemonize,0);
     rewriteConfigYesNoOption(state,"flushable",server.daemonize,0);
+    rewriteConfigYesNoOption(state,"tracestates",server.daemonize,0);
     rewriteConfigStringOption(state,"configaddress",server.configaddress,REDIS_DEFAULT_CONFIG_ADDR);
     rewriteConfigStringOption(state,"access_whitelist_file",server.access_whitelist_file,"");
     rewriteConfigStringOption(state,"pidfile",server.pidfile,REDIS_DEFAULT_PID_FILE);
