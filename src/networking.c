@@ -543,6 +543,18 @@ void copyClientOutputBuffer(redisClient *dst, redisClient *src) {
 
 #define MAX_ACCEPTS_PER_CALL 1000
 static void acceptCommonHandler(int fd, int flags, const char* remote_ip, int remote_port) {
+    /* filter by white list*/
+    if (remote_ip) {
+        sds sds_remote_ip = sdsnew(remote_ip);
+        if (server.access_whitelist && dictFind(server.access_whitelist, sds_remote_ip) == NULL) {
+            redisLog(REDIS_WARNING,"Refused: ip [%s] is not in access whitelist", remote_ip);
+            close(fd); /* May be already closed, just ignore errors */
+            sdsfree(sds_remote_ip);
+            return;
+        }
+        sdsfree(sds_remote_ip);
+    }
+
     redisClient *c;
     if ((c = createClient(fd, remote_ip, remote_port)) == NULL) {
         redisLog(REDIS_WARNING,
